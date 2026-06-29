@@ -14,6 +14,10 @@ import (
 
 const (
 	healthCheckPort = "8000"
+
+	// バックアップ頻度のデフォルト（cron 形式、UTC）。環境変数で上書き可能。
+	defaultLatestBackupCron   = "0 * * * *"   // 毎時 0 分
+	defaultSnapshotBackupCron = "30 20 * * *" // 毎日 UTC 20:30（= JST 05:30）
 )
 
 func main() {
@@ -24,31 +28,34 @@ func main() {
 
 	log.Printf("Starting vmsmartbackup service")
 
+	latestBackupCron := getenvDefault("LATEST_BACKUP_CRON", defaultLatestBackupCron)
+	snapshotBackupCron := getenvDefault("SNAPSHOT_BACKUP_CRON", defaultSnapshotBackupCron)
+
 	scheduler, err := gocron.NewScheduler()
 	if err != nil {
 		log.Fatalf("Failed to create scheduler: %v", err)
 	}
 
-	// 毎時のバックアップジョブを追加（1時間ごと）
+	// ストレージから latest/ へのバックアップジョブを追加
 	_, err = scheduler.NewJob(
-		gocron.CronJob("0 * * * *", false),
-		gocron.NewTask(service.RunHourlyBackup),
+		gocron.CronJob(latestBackupCron, false),
+		gocron.NewTask(service.RunLatestBackup),
 		gocron.WithSingletonMode(gocron.LimitModeReschedule),
 	)
 	if err != nil {
-		log.Fatalf("Failed to create hourly job: %v", err)
+		log.Fatalf("Failed to create latest backup job (cron %q): %v", latestBackupCron, err)
 	}
-	log.Print("Hourly backup job scheduled")
+	log.Printf("Latest backup job scheduled (cron %q)", latestBackupCron)
 
-	// 毎日のバックアップジョブを追加（毎日JST 05:30 = UTC 20:00）
+	// latest/ から snapshot/ へのバックアップジョブを追加
 	_, err = scheduler.NewJob(
-		gocron.CronJob("30 20 * * *", false),
-		gocron.NewTask(service.RunDailyBackup),
+		gocron.CronJob(snapshotBackupCron, false),
+		gocron.NewTask(service.RunSnapshotBackup),
 	)
 	if err != nil {
-		log.Fatalf("Failed to create daily job: %v", err)
+		log.Fatalf("Failed to create snapshot backup job (cron %q): %v", snapshotBackupCron, err)
 	}
-	log.Print("Daily backup job scheduled")
+	log.Printf("Snapshot backup job scheduled (cron %q)", snapshotBackupCron)
 
 	scheduler.Start()
 	log.Print("Scheduler started")
@@ -61,4 +68,12 @@ func main() {
 	if err := http.ListenAndServe(":"+healthCheckPort, mux); err != nil {
 		log.Fatalf("HTTP server failed: %v", err)
 	}
+}
+
+// getenvDefault は環境変数 key の値を返す。未設定または空の場合は fallback を返す。
+func getenvDefault(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
 }

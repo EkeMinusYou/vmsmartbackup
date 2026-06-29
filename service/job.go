@@ -41,9 +41,9 @@ func init() {
 	}
 }
 
-// ストレージから latest へのバックアップ（毎時実行）
-func RunHourlyBackup() {
-	log.Printf("Running hourly backup from storage to latest")
+// RunLatestBackup はストレージのスナップショットを作成し、常に最新化される latest/ へバックアップする。
+func RunLatestBackup() {
+	log.Printf("Running latest backup from storage to latest/")
 
 	cmd := exec.Command(
 		"/vmbackup",
@@ -54,38 +54,38 @@ func RunHourlyBackup() {
 		"-loggerJSONFields=ts:timestamp,level:severity,msg:message", // Cloud Loggingのjson形式でログを出力
 	)
 
-	log.Printf("Hourly backup command: %s", cmd.String())
+	log.Printf("Latest backup command: %s", cmd.String())
 	err := startCommand(cmd)
 
 	if err != nil {
-		log.Printf("Hourly backup failed: %v", err)
+		log.Printf("Latest backup failed: %v", err)
 		return
 	}
-	log.Printf("Hourly backup completed successfully")
+	log.Printf("Latest backup completed successfully")
 }
 
-// latest からデイリーディレクトリへのバックアップ（毎日実行）
-func RunDailyBackup() {
-	log.Printf("Running daily backup from latest to daily")
+// RunSnapshotBackup は latest/ を日付付きディレクトリ（snapshot/<YYYYMMDD>/）へコピーし、静的な世代として保管する。
+func RunSnapshotBackup() {
+	log.Printf("Running snapshot backup from latest/ to snapshot/")
 
 	currentDate := time.Now().Format("20060102")
 
 	cmd := exec.Command(
 		"/vmbackup",
 		"-origin="+fmt.Sprintf("gs://%s/latest/%s", backupBucketName, vmstorageName),
-		"-dst="+fmt.Sprintf("gs://%s/daily/%s/%s", backupBucketName, currentDate, vmstorageName),
+		"-dst="+fmt.Sprintf("gs://%s/snapshot/%s/%s", backupBucketName, currentDate, vmstorageName),
 		"-loggerFormat=json",
 		"-loggerJSONFields=ts:timestamp,level:severity,msg:message", // Cloud Loggingのjson形式でログを出力
 	)
 
-	log.Printf("Daily backup command: %s", cmd.String())
+	log.Printf("Snapshot backup command: %s", cmd.String())
 	err := startCommand(cmd)
 
 	if err != nil {
-		log.Printf("Daily backup failed: %v", err)
+		log.Printf("Snapshot backup failed: %v", err)
 		return
 	}
-	log.Printf("Daily backup completed successfully")
+	log.Printf("Snapshot backup completed successfully")
 }
 
 // コマンドを実行してstdoutを一行ずつログに出力
